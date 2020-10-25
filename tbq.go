@@ -5,6 +5,7 @@ package tbqueue
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/fpapadopou/tbq/config"
@@ -29,6 +30,14 @@ type ProcessorFunc func(item interface{}) error
 
 // Publish sends items to the queue along with the time at which they should be processed.
 func (q *TBQ) Publish(ctx context.Context, item interface{}, processTime time.Time) error {
+
+	timestamp := processTime.UTC().Unix()
+
+	err := q.s.Send(ctx, item, timestamp)
+	if err != nil {
+		log.Printf("tbqueue.Publish failed: %v", err)
+		return fmt.Errorf("tbqueue.Publish: failed to publish item  ")
+	}
 
 	return nil
 }
