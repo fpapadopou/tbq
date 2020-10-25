@@ -12,6 +12,12 @@ import (
 	"github.com/fpapadopou/tbq/redis"
 )
 
+const (
+	consumerInterval  = 500
+	consumerRetries   = 3
+	consumerRetryWait = 1000
+)
+
 // TBQ holds the connection to the actual source and is responsible for sending/receiving messages to/from the source.
 type TBQ struct {
 	s    Source
@@ -26,7 +32,7 @@ type Source interface {
 }
 
 // ProcessorFunc specifies how each received message
-type ProcessorFunc func(item interface{}) error
+type ProcessorFunc func(ctx context.Context, item interface{}) error
 
 // Publish sends items to the queue along with the time at which they should be processed.
 func (q *TBQ) Publish(ctx context.Context, item interface{}, processTime time.Time) error {
@@ -45,10 +51,49 @@ func (q *TBQ) Publish(ctx context.Context, item interface{}, processTime time.Ti
 // Consume starts a consumer job for the current queue.
 func (q *TBQ) Consume(ctx context.Context) error {
 
-	return nil
+	var err error
+
+	for i := 1; i <= consumerRetries; i++ {
+		err = q.doConsume(ctx)
+		if err == nil {
+			return nil
+		}
+
+		if i <= consumerRetries {
+			log.Printf("tbqueue.Consume: consume attempt %d/%d, retrying in %d milliseconds", i, consumerRetries, consumerRetryWait)
+			time.Sleep(consumerRetryWait * time.Millisecond)
+		}
+	}
+
+	return err
 }
 
-// New initializes and returns a new instance of TBQ.
+func (q *TBQ) doConsume(ctx context.Context) error {
+	// Start a ticker consuming and processing one item every consumeInterval milliseconds.
+	ticker := time.NewTicker(consumerInterval * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// TODO: Need to wait for all processorFunc instances to finish?
+			log.Print("tbqueue.doConsume: stopping consumer..")
+			return nil
+		case <-ticker.C:
+			// Consume next message and start processing it.
+			item, err := q.s.Receive(ctx)
+			if err != nil {
+				return fmt.Errorf("tbqueue.Consume: error while receiving message: %v", err)
+			}
+			err = q.proc(ctx, item)
+			if err != nil {
+				return fmt.Errorf("tbqueue.Consume: error while processing message: %v", err)
+			}
+		}
+	}
+}
+
+// New initializes and returns a new instance of TBQ using the specified processor function for the consumer.
 func New(proc ProcessorFunc) (TBQ, error) {
 
 	c, err := config.New()
@@ -64,11 +109,11 @@ func New(proc ProcessorFunc) (TBQ, error) {
 	case "redis":
 		s, err := redis.New(c)
 		if err != nil {
-			return TBQ{}, fmt.Errorf("failed to create source (redis): %v", err)
+			return TBQ{}, fmt.Errorf("tbqueue.New: failed to create source (redis): %v", err)
 		}
 		tbq.s = s
 	default:
-		return TBQ{}, fmt.Errorf("failed to load config: %v", err)
+		return TBQ{}, fmt.Errorf("tbqueue.New: unrecognized source type: %s", c.SourceType)
 	}
 
 	return tbq, nil

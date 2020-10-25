@@ -52,3 +52,59 @@ func TestTBQ_Publish(t *testing.T) {
 		})
 	}
 }
+
+func TestTBQ_Consume_ContextCancelled(t *testing.T) {
+
+	ctrl := gomock.NewController(t)
+	source := NewMockSource(ctrl)
+
+	ctx, cancelContext := context.WithCancel(context.TODO())
+	q := &TBQ{
+		s: source,
+	}
+
+	cancelContext()
+	err := q.Consume(ctx)
+
+	if err != nil {
+		t.Errorf("Consume() error = %v", err)
+	}
+}
+
+func TestTBQ_Consume_SourceReceiveError(t *testing.T) {
+
+	ctrl := gomock.NewController(t)
+	source := NewMockSource(ctrl)
+	source.EXPECT().Receive(gomock.Any()).Return(nil, errors.New("source receiver error")).AnyTimes()
+
+	q := &TBQ{
+		s: source,
+	}
+
+	err := q.Consume(context.Background())
+
+	if err == nil {
+		t.Error("Consume() expected error but did not get any")
+	}
+}
+
+func TestTBQ_Consume_ProcessorFuncError(t *testing.T) {
+
+	ctrl := gomock.NewController(t)
+	source := NewMockSource(ctrl)
+	source.EXPECT().Receive(gomock.Any()).Return("received item", nil).AnyTimes()
+
+	processor := func(ctx context.Context, i interface{}) error {
+		return errors.New("processing of item failed")
+	}
+	q := &TBQ{
+		s:    source,
+		proc: processor,
+	}
+
+	err := q.Consume(context.Background())
+
+	if err == nil {
+		t.Error("Consume() expected error but did not get any")
+	}
+}
