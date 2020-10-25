@@ -18,7 +18,7 @@ type TBQ struct {
 // Source defines the interface that a queue implementation must satisfy in order
 // to be used by TBQ.
 type Source interface {
-	Send(context.Context, interface{}) error
+	Send(context.Context, interface{}, int64) error
 	Receive(context.Context) (interface{}, error)
 }
 

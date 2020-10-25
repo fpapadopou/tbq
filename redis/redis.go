@@ -9,7 +9,7 @@ import (
 type Redis struct{}
 
 // Send implements the respective method of the Source interface.
-func (r *Redis) Send(ctx context.Context, item interface{}) error {
+func (r *Redis) Send(ctx context.Context, item interface{}, timestamp int64) error {
 
 	return nil
 }
