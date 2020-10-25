@@ -1,5 +1,7 @@
 package tbqueue
 
+//go:generate mockgen -source=tbq.go -destination=./source_mock_test.go -package=tbqueue
+
 import (
 	"context"
 	"fmt"
